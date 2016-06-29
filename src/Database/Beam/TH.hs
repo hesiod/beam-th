@@ -10,10 +10,9 @@ import Control.Monad.Writer (WriterT, execWriterT)
 import GHC.Generics (Generic)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.ExpandSyns
+import Language.Haskell.TH.ExpandSyns (expandSyns)
 
 import Database.Beam (Table, TableField, Columnar, PrimaryKey, primaryKey, tableConfigLenses, LensFor)
-
 import Database.Beam.TH.Internal
 
 {-# INLINE getColTy #-}
@@ -57,6 +56,7 @@ nameLens = do
   nm <- name
   nmT <- nameT
 -- Lens' (AdT (TableField AdT)) (TableField AdT _)
+  (Just lf) <- lift . lookupTypeName $ "LensFor"
   (TyConI (DataD _ _ _ _ (RecC _ vsts:_) _)) <- lift $ reify nmT
   let fields = fmap renameFields vsts
   fields' <- forM fields (\(x, t) -> lift (opportunisticExpand t) >>= \case
@@ -64,8 +64,8 @@ nameLens = do
                                                                     tellD . SigD x $ ConT lens' <~> (ConT nmT <~> (ConT ''TableField <~> ConT nmT))
                                                                                                 <~> (ConT ''TableField <~> ConT nmT <~> WildCardT)
                                                                     c <- lift . extractCon $ t
-                                                                    pure . ConP c . pure . ConP ''LensFor . pure . VarP $ x
-                             _ -> pure . ConP ''LensFor . pure $ VarP x)
+                                                                    pure . ConP c . pure . ConP lf . pure . VarP $ x
+                             _ -> pure . ConP lf . pure . VarP $ x)
   tellD $ ValD (ConP nm fields') (NormalB (VarE 'tableConfigLenses)) []
     where
       renameFields (cname, _, t) = (rename (++ "C") cname, t)
