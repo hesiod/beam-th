@@ -1,6 +1,12 @@
 {-# LANGUAGE TemplateHaskell, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, LambdaCase #-}
 -- | Functions to derive common boilerplate code when writing table types for the <https://hackage.haskell.org/package/beam beam>
 -- library. Only use them if you what you're doing.
+--
+-- The following GHC extensions have to be enabled in order to make the generated code typecheck:
+--
+-- @
+-- {-\# LANGUAGE TemplateHaskell, KindSignatures, StandaloneDeriving, TypeFamilies, TypeSynonymInstances, FlexibleInstances, DeriveGeneric \#-}
+-- @
 module Database.Beam.TH (makeTable, makeTable') where
 
 import Control.Monad ((>=>), forM)
@@ -12,8 +18,9 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.ExpandSyns (expandSyns)
 
-import Database.Beam (Table, TableField, Columnar, PrimaryKey, primaryKey, tableConfigLenses, LensFor)
+import Database.Beam (Table, TableField, Columnar, PrimaryKey, primaryKey, tableConfigLenses, LensFor(..))
 import Database.Beam.TH.Internal
+import Lens.Micro (Lens')
 
 {-# INLINE getColTy #-}
 getColTy :: Type -> Q Name
@@ -55,21 +62,23 @@ nameIdTySyn = do
 nameLens = do
   nm <- name
   nmT <- nameT
--- Lens' (AdT (TableField AdT)) (TableField AdT _)
-  (Just lf) <- lift . lookupTypeName $ "LensFor"
+  (Just lf) <- lift . lookupValueName $ "LensFor"
   (TyConI (DataD _ _ _ _ (RecC _ vsts:_) _)) <- lift $ reify nmT
   let fields = fmap renameFields vsts
+      signature x = tellD . SigD x $ ConT lens' <~> (ConT nmT <~> (ConT ''TableField <~> ConT nmT))
+                                                <~> (ConT ''TableField <~> ConT nmT <~> WildCardT)
   fields' <- forM fields (\(x, t) -> lift (opportunisticExpand t) >>= \case
                              AppT (AppT (ConT test) (ConT _)) _ | test == ''PrimaryKey -> do
-                                                                    tellD . SigD x $ ConT lens' <~> (ConT nmT <~> (ConT ''TableField <~> ConT nmT))
-                                                                                                <~> (ConT ''TableField <~> ConT nmT <~> WildCardT)
+                                                                    signature x
                                                                     c <- lift . extractCon $ t
                                                                     pure . ConP c . pure . ConP lf . pure . VarP $ x
-                             _ -> pure . ConP lf . pure . VarP $ x)
+                             _ -> do
+                               signature x
+                               pure . ConP lf . pure . VarP $ x)
   tellD $ ValD (ConP nm fields') (NormalB (VarE 'tableConfigLenses)) []
     where
       renameFields (cname, _, t) = (rename (++ "C") cname, t)
-      lens' = mkName "Lens'"
+      lens' = ''Lens'
       extractCon (AppT (ConT c) _) = pure c
       extractCon (AppT (AppT _ (ConT c)) _) = pure . rename (++ "Id") =<< baseName c
       extractCon x = error $ "Unknown cross-table reference '" ++ pprint x ++ "'; use PrimaryKey OtherTableT f or the synonymous OtherTableId f"
@@ -131,6 +140,8 @@ firstRecord = reify >=> (pure . head . recordFields)
 --                     *) = Database.Beam.Schema.Tables.PrimaryKey UserT f_2
 -- type UserId' = UserId Data.Functor.Identity.Identity
 -- deriving instance GHC.Show.Show UserId'
+-- userNumberC :: Lens.Micro.Type.Lens' (UserT (Database.Beam.Schema.Tables.TableField UserT))
+--                                      (Database.Beam.Schema.Tables.TableField UserT _)
 -- User (Database.Beam.Schema.Tables.LensFor userNumberC) = Database.Beam.Schema.Lenses.tableConfigLenses
 --
 -- Note: While the above example actually is a valid doctest, due to variable renaming and the pretty printer
@@ -146,6 +157,7 @@ firstRecord = reify >=> (pure . head . recordFields)
 -- type UserId f = PrimaryKey UserT f
 -- type UserId' = UserId Identity
 -- deriving instance Show UserId'
+-- userNumberC :: Lens' (UserT (TableField UserT)) (TableField UserT Int)
 -- User (LensFor userNumberC) = tableConfigLenses
 -- @
 --
