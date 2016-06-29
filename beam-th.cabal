@@ -1,5 +1,5 @@
 name:                    beam-th
-version:                 0.1.0.2
+version:                 0.1.0.3
 synopsis:                Template Haskell utilities for beam
 description:
     (Completely optional) Template Haskell functions
