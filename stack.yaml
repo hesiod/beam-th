@@ -6,5 +6,5 @@ extra-deps:
 - HDBC-sqlite3-2.3.3.1
 - convertible-1.1.1.0
 allow-newer: true
-# resolver: lts-6.3
-resolver: nightly-2016-06-21
+# resolver: lts-6.6
+resolver: nightly-2016-07-05
