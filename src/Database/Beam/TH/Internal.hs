@@ -1,11 +1,26 @@
-{-# LANGUAGE FlexibleContexts, GeneralizedNewtypeDeriving, TupleSections #-}
+{-# LANGUAGE FlexibleContexts, GeneralizedNewtypeDeriving #-}
+-- | Various internal utilities for beam-th. The usual caveats apply.
 module Database.Beam.TH.Internal (
-  MakeTableT(..), MakeTable, MakeTableT', MakeTableT'',
+  -- * The MakeTableT monad transformer
+  -- ** Definition
+  MakeTableT(..),
+  -- ** Derived type synonyms
+  MakeTable, MakeTableT', MakeTableT'',
+  -- ** Helper functions
   runTableT, tellD,
+  -- ** Extracting values from a MakeTableT
+  vst,
+  -- *** Simple and composite names
+  name, nameId, nameId', nameT,
+  -- * Name utilities
   rename,
-  vst, name, nameId, nameId', nameT,
+  -- * Type and Expression Application Sugar
   (<~>), (<+>), (~>),
-  assert, assertMany, invalidConstructor
+  -- * Error handling
+  -- ** Constructor types
+  invalidConstructor,
+  -- ** Table names
+  assert, assertMany
   ) where
 
 import Control.Monad (unless)
@@ -19,34 +34,56 @@ import Language.Haskell.TH (Name, mkName, nameBase, reportError, Q, DecsQ, Dec, 
 import Language.Haskell.TH.Syntax (VarBangType)
 import Data.Typeable (Typeable)
 
-{-# INLINE rename #-}
+-- | Rename a 'Name' using a function on 'String's
 rename :: (String -> String) -> Name -> Name
 rename f = mkName . f . nameBase
+{-# INLINE rename #-}
 
-{-# INLINE mkNameSelector #-}
 mkNameSelector :: MonadReader (Name, VarBangType) m => String -> m Name
 mkNameSelector suffix = asks (rename (++ suffix) . fst)
-{-# INLINE vst #-}
+{-# INLINE mkNameSelector #-}
+
+-- | Extract the 'PrimaryKey' 'VarBangType'
 vst :: MonadReader (Name, VarBangType) m => m VarBangType
 vst = asks snd
+{-# INLINE vst #-}
+
+name, nameId, nameId', nameT :: MonadReader (Name, VarBangType) m => m Name
+-- | Get the base name
+name = asks fst
+-- | Get the name with an \"Id\" suffix
+nameId = mkNameSelector "Id"
+-- | Get the name with an \"Id'\" suffix
+nameId' = mkNameSelector "Id'"
+-- | Get the name with a \"T\" suffix
+nameT = mkNameSelector "T"
 {-# INLINE name #-}
 {-# INLINE nameId #-}
 {-# INLINE nameId' #-}
 {-# INLINE nameT #-}
-name, nameId, nameId', nameT :: MonadReader (Name, VarBangType) m => m Name
-name = asks fst
-nameId = mkNameSelector "Id"
-nameId' = mkNameSelector "Id'"
-nameT = mkNameSelector "T"
 
 
+-- | A monad transformer for writing Template Haskell declarations.
+--
+-- The Reader contains both the base name of the table and the 'VarBangType'
+-- of the primary key field.
+--
+-- If you can come up with a better name, drop me a line.
 newtype MakeTableT m a = MakeTableT { runTable :: WriterT [Dec] (ReaderT (Name, VarBangType) m) a }
                      deriving (Typeable, Functor, Applicative, Monad, MonadReader (Name, VarBangType), MonadWriter [Dec], Fail.MonadFail)
 instance MonadTrans MakeTableT where
   lift = MakeTableT . lift . lift
+-- | Type synonym for 'MakeTableT' in the 'Identity' monad.
+--
+-- Only defined for complying with the monad transformer conventions
+-- and not actually used.
 type MakeTable a = MakeTableT Identity a
+-- | Type synonym for 'MakeTableT' in the 'Q' monad.
 type MakeTableT' a = MakeTableT Q a
+-- | Type synonym for 'MakeTableT' in the 'Q' monad with the empty tuple as the inner type.
+-- This is the most common use case.
 type MakeTableT'' = MakeTableT' ()
+
 {-
 instance Monoid MakeTableT'' where
   mempty = MakeTableT . WriterT . lift . pure $ ((), [])
@@ -55,35 +92,57 @@ instance Monoid MakeTableT'' where
       f = fmap snd . MakeTableT . lift . runWriterT . runTable
       mkt = MakeTableT . WriterT . ReaderT . const . pure . ((),)
 -}
-{-# INLINE runTableT #-}
-runTableT :: Name -> VarBangType -> MakeTableT' a -> DecsQ
-runTableT n v = flip runReaderT (n, v) . execWriterT . runTable
 
-{-# INLINE tellD #-}
+-- | Run the table writing sequence (or, the 'MakeTableT' if you prefer).
+runTableT ::
+  Name             -- ^ The base name of the table, without the trailing \"T\".
+  -> VarBangType   -- ^ The primary key field.
+  -> MakeTableT' a -- ^ The table writing sequence to be executed. The inner type is ignored.
+  -> DecsQ
+runTableT n v = flip runReaderT (n, v) . execWriterT . runTable
+{-# INLINE runTableT #-}
+
+-- | Write a single 'Dec'
 tellD :: MonadWriter [Dec] m => Dec -> m ()
 tellD = tell . pure
+{-# INLINE tellD #-}
 
-{-# INLINE (<~>) #-}
+-- $setup
+-- >>> let nm = mkName "nm"
+
+-- | Convenient syntactic sugar for application of types.
+--
+-- >>> ConT nm <~> ConT nm <~> ConT nm
+-- AppT (AppT (ConT nm) (ConT nm)) (ConT nm)
 (<~>) :: Type -> Type -> Type
 a <~> b = AppT a b
+{-# INLINE (<~>) #-}
 
-{-# INLINE (<+>) #-}
+-- | Convenient syntactic sugar for application of expressions.
+--
+-- >>> ConE nm <+> ConE nm <+> ConE nm
+-- AppE (AppE (ConE nm) (ConE nm)) (ConE nm)
 (<+>) :: Exp -> Exp -> Exp
 a <+> b = AppE a b
+{-# INLINE (<+>) #-}
 
-{-# INLINE (~>) #-}
+-- | Convenient syntactic sugar for arrows in types.
+--
+-- >>> StarT ~> StarT
+-- AppT (AppT ArrowT StarT) StarT
 (~>) :: Type -> Type -> Type
 a ~> b = ArrowT <~> a <~> b
+{-# INLINE (~>) #-}
 
 infixl 6 <~>, <+>, ~>
 
-{-# INLINE assert #-}
+-- | Assert a condition related to the table base name and suggest following the naming convention.
 assert :: Bool -> String -> Q ()
 assert cond msg = unless cond (reportError $ "Table name does not follow convention: " ++ msg ++ "; use 'MyTableNameT' or so")
-{-# INLINE assertMany #-}
+-- | Assert a list of conditions and associated error messages.
 assertMany :: [(Bool, String)] -> Q ()
 assertMany = traverse_ (uncurry assert)
 
-{-# INLINE invalidConstructor #-}
+-- | Complain about an unknown field in the table.
 invalidConstructor :: Fail.MonadFail m => m a
 invalidConstructor = Fail.fail "Invalid constructor field; the primary key must be of the form 'Columnar f SomeType'"
