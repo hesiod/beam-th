@@ -1,5 +1,12 @@
 # Changelog for the [`beam-th` package](http://hackage.haskell.org/package/beam-th)
 
+## 0.2.0.0  *July 2016*
+
+ * Increase test suite coverage
+ * Expose the `Database.Beam.TH.Internal` module together with added documentation
+ * Change the fixity of some internal operators (no visible changes)
+ * Remove unused `TupleSections` extension
+
 ## 0.1.0.3
 
  * Final round of name lookup fixes
