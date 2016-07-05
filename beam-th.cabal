@@ -28,7 +28,8 @@ library
   ghc-options:           -Wall -Wcompat
   hs-source-dirs:        src
   exposed-modules:       Database.Beam.TH
-  other-modules:         Database.Beam.TH.Internal
+                       , Database.Beam.TH.Internal
+--other-modules:
   other-extensions:      StandaloneDeriving
                        , GeneralizedNewtypeDeriving
                        , DeriveGeneric
