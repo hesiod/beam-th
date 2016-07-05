@@ -17,6 +17,7 @@ bug-reports:             https://github.com/hesiod/beam-th/issues
 build-type:              Simple
 cabal-version:           >=1.18
 stability:               Experimental
+tested-with:             GHC == 8.0.1
 
 source-repository head
   type:                  git
