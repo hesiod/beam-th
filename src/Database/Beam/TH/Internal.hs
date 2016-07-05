@@ -75,7 +75,7 @@ a <+> b = AppE a b
 (~>) :: Type -> Type -> Type
 a ~> b = ArrowT <~> a <~> b
 
-infixl 4 <~>, <+>, ~>
+infixl 6 <~>, <+>, ~>
 
 {-# INLINE assert #-}
 assert :: Bool -> String -> Q ()
