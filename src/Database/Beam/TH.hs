@@ -80,7 +80,7 @@ nameLens = do
     where
       renameFields (cname, _, t) = (rename (++ "C") cname, t)
       lens' = ''Lens'
-      extractCon (AppT (ConT c) _) = pure c
+      extractCon (AppT (ConT c) _) = fmap fromJust . lookupValueName . nameBase $ c
       extractCon (AppT (AppT _ (ConT c)) _) = fmap fromJust . lookupValueName . (++ "Id") . nameBase =<< baseName c
       extractCon x = error $ "Unknown cross-table reference '" ++ pprint x ++ "'; use PrimaryKey OtherTableT f or the synonymous OtherTableId f"
       -- To circumvent th-expand-syns: WARNING: Type synonym families (and associated type synonyms) are currently not supported (they won't be expanded). Name of unsupported family: Database.Beam.Schema.Tables.Columnar
